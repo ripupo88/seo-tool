@@ -1,0 +1,13 @@
+npm-debug.log
+
+.idea
+.idea/*.*
+.DS_Store
+.cache
+.cache/*.*
+
+/node_modules
+/node_modules/*
+/node_modules/*.*
+
+*.iml
