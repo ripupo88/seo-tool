@@ -1,91 +1,86 @@
 //  include the Keyword Extractor
 const keyword_extractor = require('../lib/keyword_extractor');
 const cheerio = require('cheerio');
-const fetch = require('node-fetch');
+const { fetchpage } = require('./puppeteer');
 const serp = require('./serp');
 
+// Variables //
+const num = 50;
+let allKeywordsCount = [];
+const options = {
+    host: 'google.es',
+    qs: {
+        q: 'raton razer',
+        filter: 0,
+        pws: 0,
+    },
+    num,
+};
+
+excludesURL = [
+    'amazon.com',
+    'amazon.es',
+    'pccomponentes',
+    'mediamarkt',
+    'youtube.com',
+    'game.es',
+    '.elcorteingles.es',
+    'wallapop.com',
+    'fnac.es',
+];
+
+exludesCount = 0;
+
 const keywords = async () => {
-    const num = 10;
-    let palabras = [];
-    var options = {
-        host: 'google.es',
-        qs: {
-            q: 'raton gaming',
-            filter: 0,
-            pws: 0,
-        },
+    let list = await serp.search(options);
+    console.log('list antes', list);
+    list = list.filter((item) => {
+        let resp = true;
+        for (let exclude of excludesURL) {
+            if (item.url.indexOf(exclude) > -1) {
+                resp = false;
+            }
+        }
+        return resp;
+    });
 
-        num,
-    };
-
-    const list = await serp.search(options);
-    console.log(list);
-
+    console.log('list despues', list);
     for (let x = 0; x < list.length; x++) {
         try {
-            const webmia = await fetch(list[x].url);
-
-            let $ = new cheerio.load(await webmia.text());
-
-            const title = $('title').text() + ' ';
-            const description =
-                $('meta[name=description]').attr('content') + ' ';
-            const imgarray = $('img');
-            let img = '';
-            let imgaltcount = 0;
-            for (let i = 0; i < imgarray.length; i++) {
-                if (
-                    !!imgarray[i].attribs.alt &&
-                    imgarray[i].attribs.alt !== ''
-                ) {
-                    imgaltcount++;
-                }
-
-                img += imgarray[i].attribs.alt + ' ';
-            }
-
-            const h1 = $('h1').text() + ' ';
-            const h2 = $('h2').text() + ' ';
-            const strong = $('strong').text() + ' ';
-            const b = $('b').text() + ' ';
-            const p = $('p').text() + ' ';
-
-            let sentence = title + description + strong + img + b + p + h1 + h2;
-            sentence = sentence
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '');
-            sentence = sentence.replace(/[^\w\s]/gi, '');
-            sentence = sentence.toLowerCase();
+            const webmia = await fetchpage(list[x].url);
+            let $ = new cheerio.load(await webmia);
+            let textInElements = getTextFromElements($);
+            textInElements = normalizeText(textInElements);
 
             //  Extract the keywords
-            let res = keyword_extractor.extract(sentence, {
+            let onlyKeywords = keyword_extractor.extract(textInElements, {
                 language: 'spanish',
                 remove_digits: true,
                 return_changed_case: false,
                 remove_duplicates: false,
             });
 
-            let count = [];
-            res.filter((v, i, a) => {
+            let keywordsCount = [];
+            onlyKeywords.filter((v, i, a) => {
                 if (a.indexOf(v) === i) {
-                    count.push({ valor: v, num: 1 });
+                    keywordsCount.push({ valor: v, num: 1 });
                     return true;
                 } else {
-                    const inds = count.findIndex((item) => {
+                    const inds = keywordsCount.findIndex((item) => {
                         return item.valor === v;
                     });
-                    count[inds].num += 1;
+                    keywordsCount[inds].num += 1;
                 }
             });
 
-            count.sort(function (a, b) {
+            keywordsCount.sort(function (a, b) {
                 return b.num - a.num;
             });
 
             for (let y = 0; y < 40; y++) {
-                if (!!count[y])
-                    palabras.push({
-                        valor: count[y].valor,
+                if (!!keywordsCount[y])
+                    allKeywordsCount.push({
+                        valor: keywordsCount[y].valor,
                         num: 40 - y + num - x,
                     });
             }
@@ -94,28 +89,71 @@ const keywords = async () => {
             continue;
         }
     }
-    let resfin = [];
 
-    palabras.filter((v, i, a) => {
+    let finalKeywords = [];
+
+    allKeywordsCount.filter((v, i, a) => {
         if (a.map((e) => e.valor).indexOf(v.valor) === i) {
-            resfin.push(v);
+            finalKeywords.push(v);
             return true;
         } else {
-            const inds = resfin.findIndex((item) => {
+            const inds = finalKeywords.findIndex((item) => {
                 return item.valor === v.valor;
             });
-            resfin[inds].num += v.num;
+            finalKeywords[inds].num += v.num;
         }
     });
 
-    resfin.sort(function (a, b) {
+    finalKeywords.sort(function (a, b) {
         return b.num - a.num;
     });
-    const maximo = resfin[0].num;
-    for (let palabra of resfin) {
+    const maximo = finalKeywords[0].num;
+    for (let palabra of finalKeywords) {
         palabra.porcent = (100 * palabra.num) / maximo;
     }
-    console.log('resfin', resfin);
-    return resfin;
+    console.log('finalKeywords', finalKeywords);
+    return finalKeywords;
 };
 keywords();
+
+/**
+ * Normalize text to lowercase and delete special char
+ *
+ * @param {string} cherrio web page loaded
+ * @returns {string} all text from every element
+ */
+function normalizeText(textInElements) {
+    textInElements = textInElements
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    textInElements = textInElements.replace(/[^\w\s]/gi, '');
+    textInElements = textInElements.toLowerCase();
+    return textInElements;
+}
+
+/**
+ * Get text from web page in some elements
+ *
+ * @param {object} cherrio web page loaded
+ * @returns {string} all text from every element
+ */
+function getTextFromElements($) {
+    const title = $('title').text() + ' ';
+    const description = $('meta[name=description]').attr('content') + ' ';
+    const imgArray = $('img');
+    let imgText = '';
+
+    for (let i = 0; i < imgArray.length; i++) {
+        imgText += imgArray[i].attribs.alt + ' ';
+    }
+
+    let textFromElements = '';
+    getTextFrom = ['h1', 'h2', 'h3', 'h5', 'h6', 'p', 'b', 'strong'];
+    for (let eachElement of getTextFrom) {
+        $(eachElement).each(function (index, value) {
+            var k = $(this).text();
+            textFromElements += k + ' ';
+        });
+    }
+    return title + description + imgText + textFromElements;
+}

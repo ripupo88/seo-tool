@@ -1,5 +1,5 @@
 const util = require('util');
-const { google } = require('./puppeteer');
+const { fetchpage } = require('./puppeteer');
 
 const cheerio = require('cheerio');
 
@@ -127,7 +127,7 @@ async function doRequest(options, nbrOfLinks = 0) {
  */
 async function execRequest(options, nbrOfLinks) {
     try {
-        const response = await google(buildGoogleUrl(options));
+        const response = await fetchpage(buildGoogleUrl(options));
 
         // if (response && response.statusCode !== HTTP_OK) {
         //     throw new Error(`Invalid HTTP status code on ${options.url}`);
